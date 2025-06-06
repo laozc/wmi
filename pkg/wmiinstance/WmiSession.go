@@ -16,6 +16,7 @@ import (
 	"github.com/go-ole/go-ole/oleutil"
 	"github.com/microsoft/wmi/go/wmi"
 	"github.com/microsoft/wmi/pkg/base/host"
+	"github.com/pkg/errors"
 )
 
 // WmiSession struct to hold the current session information
@@ -211,19 +212,19 @@ func (c *WmiSession) EnumerateInstances(className string) ([]*WmiInstance, error
 func (c *WmiSession) QueryInstances(queryExpression string) ([]*WmiInstance, error) {
 	enum, err := c.PerformRawQuery(queryExpression)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "Raw query %s failed", queryExpression)
 	}
 	defer enum.Release()
 
 	wmiInstances := []*WmiInstance{}
 	for tmp, length, err := enum.Next(1); length > 0; tmp, length, err = enum.Next(1) {
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "Failed to get next for enumerator")
 		}
 
 		wmiInstance, err := CreateWmiInstance(&tmp, c)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrapf(err, "Failed to create WMI instance %v", tmp)
 		}
 
 		wmiInstances = append(wmiInstances, wmiInstance)
