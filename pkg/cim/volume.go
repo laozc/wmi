@@ -35,10 +35,25 @@ var (
 //
 // Refer to https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/msft-volume
 // for the WMI class definition.
-func QueryVolumeByUniqueID(volumeID string, selectorList []string) (*storage.MSFT_Volume, error) {
+func QueryVolumeByUniqueID(volumeID string, selectorList []Selector) (*ole.IDispatch, error) {
+	q := NewQuery("MSFT_Volume").
+		WithNamespace(`Root\Microsoft\Windows\Storage`).
+		Select(selectorList...).
+		Select("UniqueId")
+
+	err := QueryWithBuilder(q, func(item *ole.IDispatch) error {
+
+		uid, err := GetProp(item, "UniqueId")
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+
 	var selectors []string
 	selectors = append(selectors, selectorList...)
-	selectors = append(selectors, "UniqueId")
+	selectors = append(selectors)
 	volumeQuery := query.NewWmiQueryWithSelectList("MSFT_Volume", selectors)
 	instances, err := QueryInstances(WMINamespaceStorage, volumeQuery)
 	if err != nil {
@@ -46,19 +61,6 @@ func QueryVolumeByUniqueID(volumeID string, selectorList []string) (*storage.MSF
 	}
 
 	for _, instance := range instances {
-		volume, err := storage.NewMSFT_VolumeEx1(instance)
-		if err != nil {
-			return nil, fmt.Errorf("failed to query volume (%s). error: %w", volumeID, err)
-		}
-
-		uniqueID, err := volume.GetPropertyUniqueId()
-		if err != nil {
-			return nil, fmt.Errorf("failed to query volume unique ID (%s). error: %w", volumeID, err)
-		}
-
-		if uniqueID == volumeID {
-			return volume, nil
-		}
 	}
 
 	return nil, errors.NotFound

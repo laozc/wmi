@@ -9,6 +9,7 @@ import (
 	"runtime"
 
 	"github.com/go-ole/go-ole"
+	"github.com/go-ole/go-ole/oleutil"
 	"github.com/microsoft/wmi/pkg/base/query"
 	wmierrors "github.com/microsoft/wmi/pkg/errors"
 	cim "github.com/microsoft/wmi/pkg/wmiinstance"
@@ -21,6 +22,59 @@ const (
 	WMINamespaceStorage = "Root\\Microsoft\\Windows\\Storage"
 	WMINamespaceSmb     = "Root\\Microsoft\\Windows\\Smb"
 )
+
+type Selector string
+
+type QueryBuilder struct {
+	Class     string
+	Namespace string
+	Selectors []Selector
+	Where     string
+}
+
+func NewQuery(class string) *QueryBuilder {
+	return &QueryBuilder{
+		Class:     class,
+		Namespace: "Root\\CimV2", // default, override if needed
+	}
+}
+
+func (q *QueryBuilder) WithNamespace(ns string) *QueryBuilder {
+	q.Namespace = ns
+	return q
+}
+
+func (q *QueryBuilder) Select(selectors ...Selector) *QueryBuilder {
+	q.Selectors = append(q.Selectors, selectors...)
+	return q
+}
+
+func (q *QueryBuilder) WhereClause(where string) *QueryBuilder {
+	q.Where = where
+	return q
+}
+
+func (q *QueryBuilder) Build() string {
+	selectPart := "*"
+
+	if len(q.Selectors) > 0 {
+		selectPart = ""
+		for i, s := range q.Selectors {
+			if i > 0 {
+				selectPart += ", "
+			}
+			selectPart += string(s)
+		}
+	}
+
+	query := "SELECT " + selectPart + " FROM " + q.Class
+
+	if q.Where != "" {
+		query += " WHERE " + q.Where
+	}
+
+	return query
+}
 
 type InstanceHandler func(instance *cim.WmiInstance) (bool, error)
 
@@ -186,4 +240,69 @@ func WithCOMThread(fn func() error) error {
 	defer ole.CoUninitialize()
 
 	return fn()
+}
+
+func Query(namespace, query string, cb func(item *ole.IDispatch) error) error {
+	locatorUnknown, err := oleutil.CreateObject("WbemScripting.SWbemLocator")
+	if err != nil {
+		return err
+	}
+	defer locatorUnknown.Release()
+
+	locator, err := locatorUnknown.QueryInterface(ole.IID_IDispatch)
+	if err != nil {
+		return err
+	}
+	defer locator.Release()
+
+	serviceRaw, err := oleutil.CallMethod(locator, "ConnectServer", nil, namespace)
+	if err != nil {
+		return err
+	}
+	service := serviceRaw.ToIDispatch()
+	defer service.Release()
+
+	resultRaw, err := oleutil.CallMethod(service, "ExecQuery", query)
+	if err != nil {
+		return err
+	}
+	result := resultRaw.ToIDispatch()
+	defer result.Release()
+
+	countVar, err := oleutil.GetProperty(result, "Count")
+	if err != nil {
+		return err
+	}
+	count := int(countVar.Val)
+	if count == 0 {
+
+	}
+
+	for i := 0; i < count; i++ {
+		itemRaw, err := oleutil.CallMethod(result, "ItemIndex", i)
+		if err != nil {
+			continue
+		}
+		item := itemRaw.ToIDispatch()
+
+		if err := cb(item); err != nil {
+			item.Release()
+			return err
+		}
+		item.Release()
+	}
+
+	return nil
+}
+
+func QueryWithBuilder(q *QueryBuilder, cb func(item *ole.IDispatch) error) error {
+	return Query(q.Namespace, q.Build(), cb)
+}
+
+func GetProp(item *ole.IDispatch, name string) (interface{}, error) {
+	v, err := oleutil.GetProperty(item, name)
+	if err != nil {
+		return nil, err
+	}
+	return v.Value(), nil
 }
