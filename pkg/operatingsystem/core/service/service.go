@@ -118,15 +118,9 @@ func (ws *Win32Service) IsRunning() (bool, error) {
 // Control Manager, so callers that poll IsRunning should first check
 // IsEnabled to avoid waiting on a service that will never start.
 func (ws *Win32Service) IsEnabled() (bool, error) {
-	rawStartMode, err := ws.GetProperty("StartMode")
+	startMode, err := ws.GetPropertyStartMode()
 	if err != nil {
 		return false, err
-	}
-
-	startMode, ok := rawStartMode.(string)
-	if !ok {
-		return false, errors.Wrapf(errors.InvalidType,
-			"Win32_Service StartMode property is not a string (got %T)", rawStartMode)
 	}
 
 	return startMode != SERVICE_START_MODE_DISABLED, nil
