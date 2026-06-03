@@ -27,6 +27,16 @@ const (
 	SERVICE_PAUSED           string = "Paused"
 )
 
+// Win32_Service.StartMode property values.
+// See: https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-service
+const (
+	SERVICE_START_MODE_BOOT     string = "Boot"
+	SERVICE_START_MODE_SYSTEM   string = "System"
+	SERVICE_START_MODE_AUTO     string = "Auto"
+	SERVICE_START_MODE_MANUAL   string = "Manual"
+	SERVICE_START_MODE_DISABLED string = "Disabled"
+)
+
 type Win32Service struct {
 	*cimv2.Win32_Service
 }
@@ -101,4 +111,23 @@ func (ws *Win32Service) IsRunning() (bool, error) {
 	}
 
 	return false, nil
+}
+
+// IsEnabled returns true when the service's StartMode is anything other
+// than "Disabled". A disabled service cannot be started by the Service
+// Control Manager, so callers that poll IsRunning should first check
+// IsEnabled to avoid waiting on a service that will never start.
+func (ws *Win32Service) IsEnabled() (bool, error) {
+	rawStartMode, err := ws.GetProperty("StartMode")
+	if err != nil {
+		return false, err
+	}
+
+	startMode, ok := rawStartMode.(string)
+	if !ok {
+		return false, errors.Wrapf(errors.InvalidType,
+			"Win32_Service StartMode property is not a string (got %T)", rawStartMode)
+	}
+
+	return startMode != SERVICE_START_MODE_DISABLED, nil
 }
