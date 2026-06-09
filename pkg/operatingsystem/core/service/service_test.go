@@ -40,6 +40,52 @@ func TestWin32_Service_Exists2(t *testing.T) {
 	fmt.Printf("Win32Service is running : %t\n", isRunning)
 }
 
+func TestWin32_Service_IsEnabled(t *testing.T) {
+	whost := host.NewWmiLocalHost()
+	// BFE (Base Filtering Engine) is auto-started on every Windows host,
+	// so its StartMode is never "Disabled".
+	win32svc, err := GetWin32Service(whost, "BFE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer win32svc.Close()
+
+	isEnabled, err := win32svc.IsEnabled()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !isEnabled {
+		t.Fatalf("BFE is expected to be enabled, but IsEnabled returned false")
+	}
+
+	fmt.Printf("Win32Service BFE is enabled : %t\n", isEnabled)
+}
+
+func TestWin32_Service_IsEnabled_Disabled(t *testing.T) {
+	whost := host.NewWmiLocalHost()
+	// NetTcpPortSharing ships disabled by default on Windows client and
+	// server SKUs, so its StartMode is "Disabled" unless an admin has
+	// explicitly enabled it. If this test is being run on a host where
+	// it's been enabled, the test is skipped rather than failed.
+	win32svc, err := GetWin32Service(whost, "NetTcpPortSharing")
+	if err != nil {
+		t.Skipf("NetTcpPortSharing service not present on this host: %v", err)
+	}
+	defer win32svc.Close()
+
+	isEnabled, err := win32svc.IsEnabled()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if isEnabled {
+		t.Skip("NetTcpPortSharing is enabled on this host; cannot validate disabled path")
+	}
+
+	fmt.Printf("Win32Service NetTcpPortSharing is enabled : %t\n", isEnabled)
+}
+
 func TestWin32_Service_Doesnot_Exist(t *testing.T) {
 	whost := host.NewWmiLocalHost()
 	_, err := GetWin32Service(whost, "InvalidService")
